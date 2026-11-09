@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TechGeo · Upload</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family: system-ui,'Segoe UI',Roboto,sans-serif; }
+    body { background: linear-gradient(145deg,#f5f7fc 0%,#e9ecf3 100%); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1.5rem; }
+    .card { background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); border-radius: 2.5rem; width:100%; max-width:540px; padding: 2.5rem 2rem 2.8rem; box-shadow: 0 25px 40px -12px rgba(0,20,30,0.35); }
+    .heading { display:flex; align-items:center; justify-content:center; gap:.75rem; margin-bottom:2rem; }
+    .heading i { font-size:2.2rem; color:#1e3c72; }
+    .heading h1 { font-size:2.3rem; font-weight:700; color:#0b1f3b; letter-spacing:-.5px; }
+    .heading h1 span { font-weight:300; color:#3a5a8c; }
+    .dropzone { width:100%; background:#fff; border:2px dashed #9bb7d4; border-radius:2rem; padding:2.2rem 1.5rem; text-align:center; cursor:pointer; transition:.2s; }
+    .dropzone.dragover { border-color:#1e3c72; background:#eef5ff; }
+    .dropzone i { font-size:3rem; color:#3a6ea5; margin-bottom:.6rem; }
+    .dropzone p { font-size:1.1rem; font-weight:500; color:#1d2e47; }
+    .dropzone small { font-size:.85rem; color:#5f7392; }
+    .file-info { margin-top:1rem; font-size:.9rem; color:#2d4b6e; background:#e2eaf5; padding:.5rem 1rem; border-radius:40px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .btn { margin-top:1.3rem; background: linear-gradient(115deg,#1e3c72,#2a5298); border:none; color:#fff; font-weight:600; font-size:1.1rem; padding:.9rem 2rem; border-radius:60px; width:100%; display:flex; align-items:center; justify-content:center; gap:.7rem; cursor:pointer; transition:.15s; box-shadow: 0 14px 22px -8px #1e3c7280; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+    .status { margin-top:1.2rem; padding:.9rem 1.2rem; border-radius:50px; font-size:.95rem; text-align:center; background:#f0f4fb; color:#1f3b5c; border-left:5px solid #2a5298; }
+    .status.success { background:#e1f3e1; border-color:#2e7d32; color:#1d4d1d; }
+    .status.error   { background:#ffe6e6; border-color:#c62828; color:#a51b1b; }
+    .input-hidden { display:none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="heading">
+      <i class="fas fa-cloud-upload-alt"></i>
+      <h1>Tech<span>Geo</span></h1>
+    </div>
+
+    <div class="dropzone" id="dropzone">
+      <i class="fas fa-file-upload"></i>
+      <p>Click or drag file to upload</p>
+      <small>Only one file allowed</small>
+    </div>
+    <input type="file" id="fileInput" class="input-hidden" />
+
+    <div class="file-info" id="fileInfo">No file selected</div>
+
+    <button class="btn" id="uploadBtn" disabled>
+      <i class="fas fa-database"></i> Upload to MongoDB
+    </button>
+
+    <div class="status" id="statusMessage">⚡ Ready. Choose a file.</div>
+  </div>
+
+  <script>
+    const dropzone   = document.getElementById('dropzone');
+    const fileInput  = document.getElementById('fileInput');
+    const fileInfo   = document.getElementById('fileInfo');
+    const uploadBtn  = document.getElementById('uploadBtn');
+    const statusDiv  = document.getElementById('statusMessage');
+    let selectedFile = null;
+
+    function setFile(file) {
+      if (!file) { selectedFile = null; fileInfo.textContent = 'No file selected'; uploadBtn.disabled = true; return; }
+      selectedFile = file;
+      fileInfo.textContent = `📎 ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+      uploadBtn.disabled = false;
+      statusDiv.className = 'status';
+      statusDiv.textContent = `✅ Ready: ${file.name}`;
+    }
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const f = e.dataTransfer.files[0];
+      if (f) {
+        setFile(f);
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        fileInput.files = dt.files;
+      }
+    });
+
+    uploadBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      uploadBtn.disabled = true;
+      uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+      statusDiv.className = 'status';
+      statusDiv.textContent = `⏳ Uploading "${selectedFile.name}"...`;
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error(`Server ${res.status}: ${await res.text()}`);
+        const data = await res.json();
+        statusDiv.className = 'status success';
+        statusDiv.textContent = `✅ Stored in MongoDB! ID: ${data.fileId}`;
+      } catch (err) {
+        statusDiv.className = 'status error';
+        statusDiv.textContent = `❌ Upload failed: ${err.message}`;
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.innerHTML = '<i class="fas fa-database"></i> Upload to MongoDB';
+      }
+    });
+  </script>
+</body>
+</html>
