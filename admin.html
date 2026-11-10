@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TechGeo · Admin</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family: system-ui,'Segoe UI',Roboto,sans-serif; }
+    body { background: linear-gradient(145deg,#f5f7fc 0%,#e9ecf3 100%); min-height:100vh; padding:1.5rem; display:flex; align-items:center; justify-content:center; }
+    .card { background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-radius:2rem; width:100%; max-width:920px; padding:2.2rem 2rem 2.5rem; box-shadow:0 25px 40px -12px rgba(0,20,30,0.35); }
+    .heading { display:flex; align-items:center; gap:.6rem; margin-bottom:1.6rem; flex-wrap:wrap; }
+    .heading i { font-size:1.8rem; color:#1e3c72; }
+    .heading h1 { font-size:1.9rem; font-weight:700; color:#0b1f3b; }
+    .heading h1 span { font-weight:300; color:#3a5a8c; }
+    .badge { margin-left:auto; font-size:.72rem; font-weight:600; padding:.35rem .8rem; border-radius:30px; letter-spacing:.3px; background:#1e3c72; color:#fff; }
+    .badge.ok { background:#2e7d32; }
+    .badge.locked { background:#c62828; }
+
+    .field { display:flex; flex-direction:column; gap:.35rem; margin-bottom:1rem; }
+    .field label { font-size:.82rem; font-weight:600; color:#334d6e; }
+    .field input { padding:.8rem 1rem; border-radius:40px; border:1.5px solid #cdd9e8; font-size:.95rem; outline:none; transition:.15s; background:#fff; }
+    .field input:focus { border-color:#2a5298; box-shadow:0 0 0 4px #2a529820; }
+    .field input:disabled { background:#f0f4fa; color:#8898ad; }
+
+    .btn { background:linear-gradient(115deg,#1e3c72,#2a5298); border:none; color:#fff; font-weight:600; font-size:1rem; padding:.85rem 1.5rem; border-radius:60px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:.6rem; transition:.15s; box-shadow:0 14px 22px -8px #1e3c7280; width:100%; }
+    .btn:hover:not(:disabled) { transform:translateY(-1px); }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+    .btn.small { width:auto; padding:.55rem 1.1rem; font-size:.85rem; box-shadow:none; }
+    .btn.danger { background:linear-gradient(115deg,#8a1c1c,#c62828); }
+    .btn.ghost { background:#eef2f9; color:#1e3c72; box-shadow:none; }
+
+    .status { margin-top:1rem; padding:.75rem 1rem; border-radius:30px; font-size:.9rem; text-align:center; background:#f0f4fb; color:#1f3b5c; border-left:5px solid #2a5298; }
+    .status.success { background:#e1f3e1; border-color:#2e7d32; color:#1d4d1d; }
+    .status.error   { background:#ffe6e6; border-color:#c62828; color:#a51b1b; }
+    .status.warn    { background:#fff4e0; border-color:#e68a00; color:#8a5500; }
+
+    .hidden { display:none !important; }
+
+    .topbar { display:flex; align-items:center; gap:.8rem; margin-bottom:1.2rem; flex-wrap:wrap; }
+    .who { font-size:.85rem; color:#4a6080; }
+    .who b { color:#0b1f3b; }
+    .timer { font-size:.78rem; background:#eef3fa; color:#1e3c72; padding:.35rem .8rem; border-radius:30px; font-weight:600; }
+
+    .table-wrap { border-radius:1.2rem; overflow:auto; border:1px solid #e1e8f2; background:#fff; max-height:58vh; }
+    table { width:100%; border-collapse:collapse; font-size:.88rem; }
+    thead th { background:#eef3fa; color:#1e3c72; text-align:left; padding:.8rem 1rem; font-weight:700; font-size:.78rem; text-transform:uppercase; letter-spacing:.4px; position:sticky; top:0; }
+    tbody td { padding:.75rem 1rem; border-top:1px solid #eef2f7; color:#334d6e; vertical-align:middle; }
+    tbody tr:hover { background:#f7faff; }
+    .filename { font-weight:600; color:#0b1f3b; word-break:break-all; }
+    .muted { color:#7a8ba5; font-size:.8rem; }
+    .empty { padding:2.5rem 1rem; text-align:center; color:#7a8ba5; font-size:.95rem; }
+
+    .footer-link { margin-top:1.2rem; text-align:center; font-size:.85rem; }
+    .footer-link a { color:#2a5298; text-decoration:none; font-weight:600; }
+    .footer-link a:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="heading">
+      <i class="fas fa-shield-halved"></i>
+      <h1>Tech<span>Geo</span> Admin</h1>
+      <span class="badge" id="badge">LOCKED</span>
+    </div>
+
+    <!-- LOGIN VIEW -->
+    <div id="loginView">
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="admin@techgeo.com" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button class="btn" id="loginBtn">
+        <i class="fas fa-right-to-bracket"></i> Login
+      </button>
+      <div class="status" id="loginStatus">🔐 Enter admin credentials (3 attempts, then 30-min lockout).</div>
+      <div class="footer-link"><a href="/">← Back to upload page</a></div>
+    </div>
+
+    <!-- DASHBOARD VIEW -->
+    <div id="dashView" class="hidden">
+      <div class="topbar">
+        <div class="who">Logged in as <b id="whoEmail">—</b></div>
+        <span class="timer" id="sessionTimer">⏱ 30:00</span>
+        <button class="btn small ghost" id="refreshBtn" style="margin-left:auto;">
+          <i class="fas fa-rotate"></i> Refresh
+        </button>
+        <button class="btn small danger" id="logoutBtn">
+          <i class="fas fa-right-from-bracket"></i> Logout
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Filename</th>
+              <th>Size</th>
+              <th>Uploaded</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="filesBody">
+            <tr><td colspan="5" class="empty">Loading files…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="status" id="dashStatus">📁 Files stored in MongoDB (GridFS).</div>
+      <div class="footer-link"><a href="/">← Back to upload page</a></div>
+    </div>
+  </div>
+
+  <script>
+    // ---------- DOM ----------
+    const $ = id => document.getElementById(id);
+    const loginView = $('loginView'), dashView = $('dashView');
+    const loginBtn = $('loginBtn'), loginStatus = $('loginStatus');
+    const dashStatus = $('dashStatus'), filesBody = $('filesBody');
+    const whoEmail = $('whoEmail'), badge = $('badge');
+    const logoutBtn = $('logoutBtn'), refreshBtn = $('refreshBtn');
+    const sessionTimerEl = $('sessionTimer');
+    const emailInput = $('email'), passwordInput = $('password');
+
+    let sessionExpiresAt = 0;
+    let timerInterval = null;
+    let lockoutInterval = null;
+
+    // ---------- helpers ----------
+    const fmtSize = n => n < 1024 ? `${n} B`
+      : n < 1048576 ? `${(n/1024).toFixed(1)} KB`
+      : `${(n/1048576).toFixed(2)} MB`;
+    const fmtDate = d => new Date(d).toLocaleString();
+    const fmtCountdown = ms => {
+      if (ms <= 0) return '00:00';
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    };
+
+    function setBadge(text, cls) {
+      badge.textContent = text;
+      badge.className = 'badge' + (cls ? ' ' + cls : '');
+    }
+
+    function showLogin() {
+      loginView.classList.remove('hidden');
+      dashView.classList.add('hidden');
+      setBadge('LOCKED');
+      stopSessionTimer();
+    }
+
+    function showDash(email, expiresInSec = 30 * 60) {
+      loginView.classList.add('hidden');
+      dashView.classList.remove('hidden');
+      setBadge('AUTHENTICATED', 'ok');
+      whoEmail.textContent = email;
+      sessionExpiresAt = Date.now() + expiresInSec * 1000;
+      startSessionTimer();
+      loadFiles();
+    }
+
+    function startSessionTimer() {
+      stopSessionTimer();
+      const tick = () => {
+        const left = sessionExpiresAt - Date.now();
+        sessionTimerEl.textContent = `⏱ ${fmtCountdown(left)}`;
+        if (left <= 0) {
+          stopSessionTimer();
+          showLogin();
+          loginStatus.className = 'status warn';
+          loginStatus.textContent = '⏳ Session expired. Please login again.';
+        }
+      };
+      tick();
+      timerInterval = setInterval(tick, 1000);
+    }
+    function stopSessionTimer() {
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    }
+
+    // ---------- login form ----------
+    function enableLoginForm() {
+      loginBtn.disabled = false;
+      loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
+      emailInput.disabled = false;
+      passwordInput.disabled = false;
+      if (lockoutInterval) { clearInterval(lockoutInterval); lockoutInterval = null; }
+    }
+
+    function startLockoutCountdown(lockedUntil) {
+      if (lockoutInterval) clearInterval(lockoutInterval);
+      emailInput.disabled = true;
+      passwordInput.disabled = true;
+      loginBtn.disabled = true;
+
+      const tick = () => {
+        const left = lockedUntil - Date.now();
+        if (left <= 0) {
+          enableLoginForm();
+          loginStatus.className = 'status';
+          loginStatus.textContent = '🔓 Lockout expired. You can try again.';
+          setBadge('LOCKED');
+          return;
+        }
+        const mins = Math.floor(left / 60000);
+        const secs = Math.floor((left % 60000) / 1000);
+        loginBtn.innerHTML = `<i class="fas fa-lock"></i> Locked ${mins}:${String(secs).padStart(2,'0')}`;
+        loginStatus.className = 'status error';
+        loginStatus.textContent = `🚫 Too many failed attempts. Try again in ${mins}m ${String(secs).padStart(2,'0')}s.`;
+        setBadge('LOCKED', 'locked');
+      };
+      tick();
+      lockoutInterval = setInterval(tick, 1000);
+    }
+
+    loginBtn.addEventListener('click', async () => {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      if (!email || !password) {
+        loginStatus.className = 'status error';
+        loginStatus.textContent = '⚠️ Email and password required.';
+        return;
+      }
+      loginBtn.disabled = true;
+      loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+      loginStatus.className = 'status';
+      loginStatus.textContent = '⏳ Checking credentials...';
+
+      try {
+        const res = await fetch('/api/admin?action=login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (res.status === 423) {
+          const until = data.lockedUntil || (Date.now() + 30 * 60000);
+          startLockoutCountdown(until);
+          return;
+        }
+        if (!res.ok) {
+          const left = data.attemptsLeft;
+          loginStatus.className = 'status error';
+          loginStatus.textContent = `❌ ${data.error}` + (left != null ? ` (${left} left)` : '');
+          loginBtn.disabled = false;
+          loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
+          return;
+        }
+
+        // success
+        loginStatus.className = 'status success';
+        loginStatus.textContent = '✅ Logged in!';
+        emailInput.value = '';
+        passwordInput.value = '';
+        showDash(data.email, data.expiresIn || 30 * 60);
+      } catch (err) {
+        loginStatus.className = 'status error';
+        loginStatus.textContent = `❌ ${err.message}`;
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
+      }
+    });
+
+    passwordInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') loginBtn.click();
+    });
+
+    // ---------- files ----------
+    async function loadFiles() {
+      filesBody.innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+      try {
+        const res = await fetch('/api/admin?action=files');
+        if (res.status === 401) { showLogin(); return; }
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (!data.files.length) {
+          filesBody.innerHTML = `<tr><td colspan="5" class="empty">📭 No files uploaded yet.</td></tr>`;
+          dashStatus.className = 'status';
+          dashStatus.textContent = '📁 0 files in MongoDB.';
+          return;
+        }
+        filesBody.innerHTML = data.files.map((f, i) => `
+          <tr>
+            <td class="muted">${i + 1}</td>
+            <td class="filename">${f.filename}</td>
+            <td class="muted">${fmtSize(f.size)}</td>
+            <td class="muted">${fmtDate(f.uploadDate)}</td>
+            <td>
+              <a class="btn small" style="width:auto;text-decoration:none;"
+                 href="/api/admin?action=download&id=${f.id}">
+                 <i class="fas fa-download"></i> Download
+              </a>
+            </td>
+          </tr>
+        `).join('');
+        dashStatus.className = 'status success';
+        dashStatus.textContent = `✅ ${data.count} file${data.count === 1 ? '' : 's'} loaded.`;
+      } catch (err) {
+        filesBody.innerHTML = `<tr><td colspan="5" class="empty">Failed to load files.</td></tr>`;
+        dashStatus.className = 'status error';
+        dashStatus.textContent = `❌ ${err.message}`;
+      }
+    }
+
+    refreshBtn.addEventListener('click', loadFiles);
+
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/admin?action=logout', { method: 'POST' });
+      stopSessionTimer();
+      showLogin();
+      loginStatus.className = 'status';
+      loginStatus.textContent = '👋 Logged out.';
+      setBadge('LOCKED');
+    });
+
+    // ---------- auto-login check on page load ----------
+    (async function checkSession() {
+      try {
+        const res = await fetch('/api/admin?action=session');
+        if (res.ok) {
+          const data = await res.json();
+          const secs = Math.max(1, Math.floor((data.expiresAt - Date.now()) / 1000));
+          showDash(data.email, secs);
+        } else {
+          showLogin();
+        }
+      } catch {
+        showLogin();
+      }
+    })();
+  </script>
+</body>
+</html>
