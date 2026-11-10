@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import { MongoClient, GridFSBucket, ObjectId } from 'mongodb';
-import { Readable } from 'stream';
 
 // ---------- Config from env ----------
 const ADMIN_EMAIL      = process.env.ADMIN_EMAIL;
@@ -32,7 +31,7 @@ async function getBucket() {
   return cachedBucket;
 }
 
-// ---------- Session token (HMAC signed) ----------
+// ---------- Session token ----------
 function sign(payload) {
   return crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
 }
@@ -62,9 +61,7 @@ function parseCookies(req) {
     })
   );
 }
-function getSession(req) {
-  return verifyToken(parseCookies(req)[COOKIE_NAME]);
-}
+function getSession(req) { return verifyToken(parseCookies(req)[COOKIE_NAME]); }
 function setSession(res, email) {
   const token = createToken(email);
   res.setHeader('Set-Cookie',
@@ -75,7 +72,7 @@ function clearSession(res) {
   res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
 }
 
-// ---------- Lockout logic ----------
+// ---------- Lockout ----------
 async function getLockout(email) {
   const db = await getDb();
   const doc = await db.collection('admin_lockouts').findOne({ email });
@@ -99,6 +96,37 @@ async function recordFailure(email) {
 async function resetFailures(email) {
   const db = await getDb();
   await db.collection('admin_lockouts').deleteOne({ email });
+}
+
+// ---------- File meta (status: pending | done) ----------
+async function getMetaMap(fileIds) {
+  const db = await getDb();
+  const docs = await db.collection('filemeta')
+    .find({ fileId: { $in: fileIds } })
+    .toArray();
+  return Object.fromEntries(docs.map(d => [d.fileId, d]));
+}
+
+async function setDone(fileId, done = true) {
+  const db = await getDb();
+  await db.collection('filemeta').updateOne(
+    { fileId },
+    { $set: { fileId, status: done ? 'done' : 'pending', doneAt: done ? new Date() : null } },
+    { upsert: true }
+  );
+}
+
+async function deleteFileRecord(fileId) {
+  const db = await getDb();
+  const bucket = await getBucket();
+  const _id = new ObjectId(fileId);
+
+  // Try GridFS delete (ignore if already gone)
+  try { await bucket.delete(_id); } catch (e) { /* not found */ }
+
+  // Clean meta + lockouts (unrelated, just tidy)
+  await db.collection('filemeta').deleteOne({ fileId });
+  return true;
 }
 
 // ---------- Body parser ----------
@@ -125,9 +153,7 @@ export default async function handler(req, res) {
       const { email, password } = await readBody(req);
       if (!email || !password) return res.status(400).json({ error: 'Email & password required' });
 
-      if (email !== ADMIN_EMAIL) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
+      if (email !== ADMIN_EMAIL) return res.status(401).json({ error: 'Invalid credentials' });
 
       const lock = await getLockout(email);
       if (lock.lockedUntil && Date.now() < lock.lockedUntil) {
@@ -137,12 +163,10 @@ export default async function handler(req, res) {
 
       if (password !== ADMIN_PASSWORD) {
         const { attempts, lockedUntil } = await recordFailure(email);
-        if (lockedUntil) {
-          return res.status(423).json({
-            error: `❌ 3 failed attempts — account locked for ${LOCKOUT_MINUTES} minutes.`,
-            lockedUntil,
-          });
-        }
+        if (lockedUntil) return res.status(423).json({
+          error: `❌ 3 failed attempts — locked for ${LOCKOUT_MINUTES} minutes.`,
+          lockedUntil,
+        });
         return res.status(401).json({
           error: `❌ Wrong password. ${MAX_ATTEMPTS - attempts} attempt(s) left.`,
           attemptsLeft: MAX_ATTEMPTS - attempts,
@@ -151,27 +175,20 @@ export default async function handler(req, res) {
 
       await resetFailures(email);
       setSession(res, email);
-      return res.status(200).json({
-        success: true,
-        email,
-        expiresIn: SESSION_MINUTES * 60,
-      });
+      return res.status(200).json({ success: true, email, expiresIn: SESSION_MINUTES * 60 });
     }
 
     // ===== LOGOUT =====
-    if (action === 'logout') {
-      clearSession(res);
-      return res.status(200).json({ success: true });
-    }
+    if (action === 'logout') { clearSession(res); return res.status(200).json({ success: true }); }
 
-    // ===== SESSION CHECK =====
+    // ===== SESSION =====
     if (action === 'session') {
       const s = getSession(req);
       if (!s) return res.status(401).json({ error: 'No session' });
       return res.status(200).json({ email: s.email, expiresAt: s.exp });
     }
 
-    // ===== PROTECTED ACTIONS BELOW =====
+    // ===== PROTECTED BELOW =====
     const session = getSession(req);
     if (!session) return res.status(401).json({ error: 'Unauthorized — login required' });
 
@@ -180,19 +197,27 @@ export default async function handler(req, res) {
       if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
       const bucket = await getBucket();
       const files = await bucket.find({}).sort({ uploadDate: -1 }).toArray();
+      const meta = await getMetaMap(files.map(f => f._id.toString()));
+
       return res.status(200).json({
         success: true,
         count: files.length,
-        files: files.map(f => ({
-          id: f._id.toString(),
-          filename: f.filename,
-          size: f.length,
-          uploadDate: f.uploadDate,
-        })),
+        files: files.map(f => {
+          const id = f._id.toString();
+          const m = meta[id] || {};
+          return {
+            id,
+            filename: f.filename,
+            size: f.length,
+            uploadDate: f.uploadDate,
+            status: m.status || 'pending',
+            doneAt: m.doneAt || null,
+          };
+        }),
       });
     }
 
-    // ===== DOWNLOAD FILE =====
+    // ===== DOWNLOAD (auto-marks done) =====
     if (action === 'download') {
       if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
       const { id } = req.query;
@@ -201,11 +226,38 @@ export default async function handler(req, res) {
       const _id = new ObjectId(id);
       const found = await bucket.find({ _id }).toArray();
       if (!found.length) return res.status(404).json({ error: 'Not found' });
+
+      // Auto-mark as done
+      await setDone(id, true);
+
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition',
         `attachment; filename="${encodeURIComponent(found[0].filename)}"`);
       bucket.openDownloadStream(_id).pipe(res);
       return;
+    }
+
+    // ===== MARK DONE / UNDONE =====
+    if (action === 'markdone') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+      const { id, done } = await readBody(req);
+      if (!id) return res.status(400).json({ error: 'Missing id' });
+      await setDone(id, done !== false);
+      return res.status(200).json({ success: true, id, status: done !== false ? 'done' : 'pending' });
+    }
+
+    // ===== DELETE =====
+    if (action === 'delete') {
+      if (req.method !== 'DELETE' && req.method !== 'POST')
+        return res.status(405).json({ error: 'DELETE or POST only' });
+      let id = req.query.id;
+      if (!id && req.method === 'POST') {
+        const body = await readBody(req);
+        id = body.id;
+      }
+      if (!id) return res.status(400).json({ error: 'Missing id' });
+      await deleteFileRecord(id);
+      return res.status(200).json({ success: true, id });
     }
 
     return res.status(400).json({ error: 'Unknown action' });
