@@ -8,7 +8,7 @@
   <style>
     * { margin:0; padding:0; box-sizing:border-box; font-family: system-ui,'Segoe UI',Roboto,sans-serif; }
     body { background: linear-gradient(145deg,#f5f7fc 0%,#e9ecf3 100%); min-height:100vh; padding:1.5rem; display:flex; align-items:center; justify-content:center; }
-    .card { background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-radius:2rem; width:100%; max-width:920px; padding:2.2rem 2rem 2.5rem; box-shadow:0 25px 40px -12px rgba(0,20,30,0.35); }
+    .card { background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-radius:2rem; width:100%; max-width:1040px; padding:2.2rem 2rem 2.5rem; box-shadow:0 25px 40px -12px rgba(0,20,30,0.35); }
     .heading { display:flex; align-items:center; gap:.6rem; margin-bottom:1.6rem; flex-wrap:wrap; }
     .heading i { font-size:1.8rem; color:#1e3c72; }
     .heading h1 { font-size:1.9rem; font-weight:700; color:#0b1f3b; }
@@ -26,9 +26,12 @@
     .btn { background:linear-gradient(115deg,#1e3c72,#2a5298); border:none; color:#fff; font-weight:600; font-size:1rem; padding:.85rem 1.5rem; border-radius:60px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:.6rem; transition:.15s; box-shadow:0 14px 22px -8px #1e3c7280; width:100%; }
     .btn:hover:not(:disabled) { transform:translateY(-1px); }
     .btn:disabled { opacity:.6; cursor:not-allowed; }
-    .btn.small { width:auto; padding:.55rem 1.1rem; font-size:.85rem; box-shadow:none; }
+    .btn.small { width:auto; padding:.5rem .85rem; font-size:.82rem; box-shadow:none; }
+    .btn.tiny { width:auto; padding:.4rem .75rem; font-size:.78rem; box-shadow:none; gap:.4rem; }
     .btn.danger { background:linear-gradient(115deg,#8a1c1c,#c62828); }
+    .btn.success { background:linear-gradient(115deg,#1b5e20,#2e7d32); }
     .btn.ghost { background:#eef2f9; color:#1e3c72; box-shadow:none; }
+    .btn.undo { background:#fff4e0; color:#8a5500; box-shadow:none; }
 
     .status { margin-top:1rem; padding:.75rem 1rem; border-radius:30px; font-size:.9rem; text-align:center; background:#f0f4fb; color:#1f3b5c; border-left:5px solid #2a5298; }
     .status.success { background:#e1f3e1; border-color:#2e7d32; color:#1d4d1d; }
@@ -44,12 +47,18 @@
 
     .table-wrap { border-radius:1.2rem; overflow:auto; border:1px solid #e1e8f2; background:#fff; max-height:58vh; }
     table { width:100%; border-collapse:collapse; font-size:.88rem; }
-    thead th { background:#eef3fa; color:#1e3c72; text-align:left; padding:.8rem 1rem; font-weight:700; font-size:.78rem; text-transform:uppercase; letter-spacing:.4px; position:sticky; top:0; }
-    tbody td { padding:.75rem 1rem; border-top:1px solid #eef2f7; color:#334d6e; vertical-align:middle; }
+    thead th { background:#eef3fa; color:#1e3c72; text-align:left; padding:.8rem 1rem; font-weight:700; font-size:.75rem; text-transform:uppercase; letter-spacing:.4px; position:sticky; top:0; }
+    tbody td { padding:.7rem 1rem; border-top:1px solid #eef2f7; color:#334d6e; vertical-align:middle; }
     tbody tr:hover { background:#f7faff; }
     .filename { font-weight:600; color:#0b1f3b; word-break:break-all; }
     .muted { color:#7a8ba5; font-size:.8rem; }
     .empty { padding:2.5rem 1rem; text-align:center; color:#7a8ba5; font-size:.95rem; }
+
+    .pill { display:inline-block; font-size:.72rem; font-weight:700; padding:.28rem .7rem; border-radius:30px; letter-spacing:.3px; }
+    .pill.pending { background:#fff4e0; color:#8a5500; }
+    .pill.done { background:#e1f3e1; color:#1d4d1d; }
+
+    .actions { display:flex; gap:.35rem; flex-wrap:wrap; }
 
     .footer-link { margin-top:1.2rem; text-align:center; font-size:.85rem; }
     .footer-link a { color:#2a5298; text-decoration:none; font-weight:600; }
@@ -64,7 +73,7 @@
       <span class="badge" id="badge">LOCKED</span>
     </div>
 
-    <!-- LOGIN VIEW -->
+    <!-- LOGIN -->
     <div id="loginView">
       <div class="field">
         <label for="email">Email</label>
@@ -81,7 +90,7 @@
       <div class="footer-link"><a href="/">← Back to upload page</a></div>
     </div>
 
-    <!-- DASHBOARD VIEW -->
+    <!-- DASHBOARD -->
     <div id="dashView" class="hidden">
       <div class="topbar">
         <div class="who">Logged in as <b id="whoEmail">—</b></div>
@@ -98,15 +107,16 @@
         <table>
           <thead>
             <tr>
-              <th>#</th>
+              <th style="width:40px;">#</th>
               <th>Filename</th>
-              <th>Size</th>
-              <th>Uploaded</th>
-              <th>Action</th>
+              <th style="width:70px;">Size</th>
+              <th style="width:150px;">Uploaded</th>
+              <th style="width:90px;">Status</th>
+              <th style="width:250px;">Actions</th>
             </tr>
           </thead>
           <tbody id="filesBody">
-            <tr><td colspan="5" class="empty">Loading files…</td></tr>
+            <tr><td colspan="6" class="empty">Loading files…</td></tr>
           </tbody>
         </table>
       </div>
@@ -117,7 +127,6 @@
   </div>
 
   <script>
-    // ---------- DOM ----------
     const $ = id => document.getElementById(id);
     const loginView = $('loginView'), dashView = $('dashView');
     const loginBtn = $('loginBtn'), loginStatus = $('loginStatus');
@@ -131,7 +140,6 @@
     let timerInterval = null;
     let lockoutInterval = null;
 
-    // ---------- helpers ----------
     const fmtSize = n => n < 1024 ? `${n} B`
       : n < 1048576 ? `${(n/1024).toFixed(1)} KB`
       : `${(n/1048576).toFixed(2)} MB`;
@@ -142,6 +150,7 @@
       const s = Math.floor((ms % 60000) / 1000);
       return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
     };
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     function setBadge(text, cls) {
       badge.textContent = text;
@@ -184,7 +193,6 @@
       if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     }
 
-    // ---------- login form ----------
     function enableLoginForm() {
       loginBtn.disabled = false;
       loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
@@ -198,7 +206,6 @@
       emailInput.disabled = true;
       passwordInput.disabled = true;
       loginBtn.disabled = true;
-
       const tick = () => {
         const left = lockedUntil - Date.now();
         if (left <= 0) {
@@ -231,7 +238,6 @@
       loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
       loginStatus.className = 'status';
       loginStatus.textContent = '⏳ Checking credentials...';
-
       try {
         const res = await fetch('/api/admin?action=login', {
           method: 'POST',
@@ -239,10 +245,8 @@
           body: JSON.stringify({ email, password }),
         });
         const data = await res.json();
-
         if (res.status === 423) {
-          const until = data.lockedUntil || (Date.now() + 30 * 60000);
-          startLockoutCountdown(until);
+          startLockoutCountdown(data.lockedUntil || (Date.now() + 30 * 60000));
           return;
         }
         if (!res.ok) {
@@ -253,8 +257,6 @@
           loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
           return;
         }
-
-        // success
         loginStatus.className = 'status success';
         loginStatus.textContent = '✅ Logged in!';
         emailInput.value = '';
@@ -272,42 +274,117 @@
       if (e.key === 'Enter') loginBtn.click();
     });
 
-    // ---------- files ----------
+    // ---------- FILES ----------
     async function loadFiles() {
-      filesBody.innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+      filesBody.innerHTML = `<tr><td colspan="6" class="empty">Loading…</td></tr>`;
       try {
         const res = await fetch('/api/admin?action=files');
         if (res.status === 401) { showLogin(); return; }
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         if (!data.files.length) {
-          filesBody.innerHTML = `<tr><td colspan="5" class="empty">📭 No files uploaded yet.</td></tr>`;
+          filesBody.innerHTML = `<tr><td colspan="6" class="empty">📭 No files uploaded yet.</td></tr>`;
           dashStatus.className = 'status';
           dashStatus.textContent = '📁 0 files in MongoDB.';
           return;
         }
-        filesBody.innerHTML = data.files.map((f, i) => `
-          <tr>
-            <td class="muted">${i + 1}</td>
-            <td class="filename">${f.filename}</td>
-            <td class="muted">${fmtSize(f.size)}</td>
-            <td class="muted">${fmtDate(f.uploadDate)}</td>
-            <td>
-              <a class="btn small" style="width:auto;text-decoration:none;"
-                 href="/api/admin?action=download&id=${f.id}">
-                 <i class="fas fa-download"></i> Download
-              </a>
-            </td>
-          </tr>
-        `).join('');
+
+        filesBody.innerHTML = data.files.map((f, i) => {
+          const isDone = f.status === 'done';
+          return `
+            <tr>
+              <td class="muted">${i + 1}</td>
+              <td class="filename">${esc(f.filename)}</td>
+              <td class="muted">${fmtSize(f.size)}</td>
+              <td class="muted">${fmtDate(f.uploadDate)}</td>
+              <td><span class="pill ${isDone ? 'done' : 'pending'}">${isDone ? '✔ DONE' : '● PENDING'}</span></td>
+              <td>
+                <div class="actions">
+                  <button class="btn tiny ghost" data-action="download" data-id="${f.id}">
+                    <i class="fas fa-download"></i> Download
+                  </button>
+                  <button class="btn tiny ${isDone ? 'undo' : 'success'}"
+                          data-action="markdone" data-id="${f.id}" data-done="${isDone ? '0' : '1'}">
+                    <i class="fas ${isDone ? 'fa-rotate-left' : 'fa-check'}"></i>
+                    ${isDone ? 'Undo' : 'Mark Done'}
+                  </button>
+                  <button class="btn tiny danger" data-action="delete" data-id="${f.id}" data-name="${esc(f.filename)}">
+                    <i class="fas fa-trash"></i> Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
         dashStatus.className = 'status success';
         dashStatus.textContent = `✅ ${data.count} file${data.count === 1 ? '' : 's'} loaded.`;
       } catch (err) {
-        filesBody.innerHTML = `<tr><td colspan="5" class="empty">Failed to load files.</td></tr>`;
+        filesBody.innerHTML = `<tr><td colspan="6" class="empty">Failed to load files.</td></tr>`;
         dashStatus.className = 'status error';
         dashStatus.textContent = `❌ ${err.message}`;
       }
     }
+
+    // Delegate button clicks
+    filesBody.addEventListener('click', async e => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+
+      if (action === 'download') {
+        // Trigger download via hidden link, then refresh (auto-marks done on server)
+        const a = document.createElement('a');
+        a.href = `/api/admin?action=download&id=${id}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        dashStatus.className = 'status warn';
+        dashStatus.textContent = '⬇️ Download started — marking as done…';
+        setTimeout(loadFiles, 1200);
+        return;
+      }
+
+      if (action === 'markdone') {
+        const done = btn.dataset.done === '1';
+        btn.disabled = true;
+        try {
+          const res = await fetch('/api/admin?action=markdone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, done }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          dashStatus.className = 'status success';
+          dashStatus.textContent = done ? '✔ Marked as done.' : '↺ Marked as pending.';
+          loadFiles();
+        } catch (err) {
+          dashStatus.className = 'status error';
+          dashStatus.textContent = `❌ ${err.message}`;
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (action === 'delete') {
+        const name = btn.dataset.name || 'this file';
+        if (!confirm(`Delete "${name}" permanently?\n\nThis cannot be undone.`)) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/admin?action=delete&id=${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error(await res.text());
+          dashStatus.className = 'status success';
+          dashStatus.textContent = `🗑️ Deleted "${name}".`;
+          loadFiles();
+        } catch (err) {
+          dashStatus.className = 'status error';
+          dashStatus.textContent = `❌ Delete failed: ${err.message}`;
+          btn.disabled = false;
+        }
+        return;
+      }
+    });
 
     refreshBtn.addEventListener('click', loadFiles);
 
@@ -320,7 +397,7 @@
       setBadge('LOCKED');
     });
 
-    // ---------- auto-login check on page load ----------
+    // ---------- auto-login check ----------
     (async function checkSession() {
       try {
         const res = await fetch('/api/admin?action=session');
