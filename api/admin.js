@@ -13,7 +13,7 @@ const COOKIE_NAME      = 'techgeo_admin';
 // ---------- Mongo cache ----------
 let cachedClient = null;
 let cachedDb = null;
-let cachedBucket = null;
+const cachedBuckets = {}; // Store multiple buckets
 
 async function getDb() {
   if (cachedDb) return cachedDb;
@@ -24,11 +24,12 @@ async function getDb() {
   cachedDb = cachedClient.db(process.env.MONGODB_DB || 'techgeo');
   return cachedDb;
 }
-async function getBucket() {
-  if (cachedBucket) return cachedBucket;
+
+async function getBucket(bucketName = 'uploads') {
+  if (cachedBuckets[bucketName]) return cachedBuckets[bucketName];
   const db = await getDb();
-  cachedBucket = new GridFSBucket(db, { bucketName: 'uploads' });
-  return cachedBucket;
+  cachedBuckets[bucketName] = new GridFSBucket(db, { bucketName });
+  return cachedBuckets[bucketName];
 }
 
 // ---------- Session token ----------
@@ -116,15 +117,15 @@ async function setDone(fileId, done = true) {
   );
 }
 
-async function deleteFileRecord(fileId) {
+async function deleteFileRecord(fileId, bucketName) {
   const db = await getDb();
-  const bucket = await getBucket();
+  const bucket = await getBucket(bucketName);
   const _id = new ObjectId(fileId);
 
   // Try GridFS delete (ignore if already gone)
   try { await bucket.delete(_id); } catch (e) { /* not found */ }
 
-  // Clean meta + lockouts (unrelated, just tidy)
+  // Clean meta
   await db.collection('filemeta').deleteOne({ fileId });
   return true;
 }
@@ -192,17 +193,33 @@ export default async function handler(req, res) {
     const session = getSession(req);
     if (!session) return res.status(401).json({ error: 'Unauthorized — login required' });
 
-    // ===== LIST FILES =====
+    // ===== LIST FILES & IMAGES =====
     if (action === 'files') {
       if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
-      const bucket = await getBucket();
-      const files = await bucket.find({}).sort({ uploadDate: -1 }).toArray();
-      const meta = await getMetaMap(files.map(f => f._id.toString()));
+      
+      const db = await getDb();
+      
+      // Fetch both files and images concurrently
+      const [uploads, images] = await Promise.all([
+        db.collection('uploads.files').find({}).toArray(),
+        db.collection('images.files').find({}).toArray()
+      ]);
+
+      // Tag them with their bucket origin
+      const combined = [
+        ...uploads.map(f => ({ ...f, bucket: 'uploads' })),
+        ...images.map(f => ({ ...f, bucket: 'images' }))
+      ];
+
+      // Sort newest first
+      combined.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
+
+      const meta = await getMetaMap(combined.map(f => f._id.toString()));
 
       return res.status(200).json({
         success: true,
-        count: files.length,
-        files: files.map(f => {
+        count: combined.length,
+        files: combined.map(f => {
           const id = f._id.toString();
           const m = meta[id] || {};
           return {
@@ -212,6 +229,8 @@ export default async function handler(req, res) {
             uploadDate: f.uploadDate,
             status: m.status || 'pending',
             doneAt: m.doneAt || null,
+            bucket: f.bucket, // Send bucket to frontend
+            isImage: f.bucket === 'images' // Helpful for frontend rendering
           };
         }),
       });
@@ -220,9 +239,10 @@ export default async function handler(req, res) {
     // ===== DOWNLOAD (auto-marks done) =====
     if (action === 'download') {
       if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
-      const { id } = req.query;
+      const { id, bucket: bucketName = 'uploads' } = req.query;
       if (!id) return res.status(400).json({ error: 'Missing id' });
-      const bucket = await getBucket();
+      
+      const bucket = await getBucket(bucketName);
       const _id = new ObjectId(id);
       const found = await bucket.find({ _id }).toArray();
       if (!found.length) return res.status(404).json({ error: 'Not found' });
@@ -250,13 +270,18 @@ export default async function handler(req, res) {
     if (action === 'delete') {
       if (req.method !== 'DELETE' && req.method !== 'POST')
         return res.status(405).json({ error: 'DELETE or POST only' });
+      
       let id = req.query.id;
-      if (!id && req.method === 'POST') {
+      let bucketName = req.query.bucket || 'uploads'; // fallback
+      
+      if (req.method === 'POST') {
         const body = await readBody(req);
-        id = body.id;
+        id = id || body.id;
+        bucketName = body.bucket || bucketName;
       }
+      
       if (!id) return res.status(400).json({ error: 'Missing id' });
-      await deleteFileRecord(id);
+      await deleteFileRecord(id, bucketName);
       return res.status(200).json({ success: true, id });
     }
 
