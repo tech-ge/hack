@@ -1,21 +1,45 @@
-// api/get-image.js
-import { MongoClient, ObjectId } from 'mongodb';
-const client = new MongoClient(process.env.MONGODB_URI);
+import { MongoClient, GridFSBucket, ObjectId } from 'mongodb';
+
+let cachedClient = null;
+let cachedBucket = null;
+
+async function getBucket() {
+  if (cachedBucket) return cachedBucket;
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI is not defined');
+  if (!cachedClient) {
+    cachedClient = new MongoClient(uri);
+    await cachedClient.connect();
+  }
+  const db = cachedClient.db(process.env.MONGODB_DB || 'techgeo');
+  cachedBucket = new GridFSBucket(db, { bucketName: 'images' });
+  return cachedBucket;
+}
 
 export default async function handler(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
   const { id } = req.query;
-  if (!id) return res.status(400).send('ID required');
+  if (!id) return res.status(400).json({ error: 'Missing image ID' });
 
-  await client.connect();
-  const db = client.db('techgeo');
-  const image = await db.collection('images').findOne({ _id: new ObjectId(id) });
+  try {
+    const bucket = await getBucket();
+    const _id = new ObjectId(id);
 
-  if (!image) return res.status(404).send('Image not found');
+    // Find the file metadata first to set the correct Content-Type
+    const files = await bucket.find({ _id }).toArray();
+    if (!files.length) return res.status(404).json({ error: 'Image not found' });
 
-  // Set the headers so the browser knows it's an image
-  res.setHeader('Content-Type', image.contentType);
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  
-  // Send the raw binary data
-  res.send(image.data.buffer);
+    const file = files[0];
+    
+    // Set appropriate headers for browsers to display the image
+    res.setHeader('Content-Type', file.contentType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); // Cache for 1 year
+
+    // Stream the image directly from GridFS to the browser
+    bucket.openDownloadStream(_id).pipe(res);
+  } catch (err) {
+    console.error('Get image error:', err);
+    return res.status(500).json({ error: err.message });
+  }
 }
