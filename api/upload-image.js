@@ -13,7 +13,6 @@ async function getBucket() {
     await cachedClient.connect();
   }
   const db = cachedClient.db(process.env.MONGODB_DB || 'techgeo');
-  // Using 'images' collection for images
   cachedBucket = new GridFSBucket(db, { bucketName: 'images' });
   return cachedBucket;
 }
@@ -37,7 +36,9 @@ export default async function handler(req, res) {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
-    const parts = splitBuffer(buffer, Buffer.from(`--${boundary}`));
+
+    const boundaryBuf = Buffer.from(`--${boundary}`);
+    const parts = splitBuffer(buffer, boundaryBuf);
 
     let fileBuffer = null;
     let filename = 'image.jpg';
@@ -65,16 +66,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'No file found in request' });
     }
 
-    // --- IMAGE VALIDATION (Allow only images here) ---
     const allowedImages = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml'];
-    
     if (!allowedImages.includes(fileMimeType)) {
       return res.status(400).json({ error: 'Invalid format. This route is for images only.' });
     }
     if (fileBuffer.length > 10 * 1024 * 1024) {
       return res.status(413).json({ error: 'Image too large. Max size is 10MB.' });
     }
-    // ------------------------------------------------
 
     const uploadStream = bucket.openUploadStream(filename, {
       contentType: fileMimeType,
