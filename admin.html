@@ -8,7 +8,7 @@
   <style>
     * { margin:0; padding:0; box-sizing:border-box; font-family: system-ui,'Segoe UI',Roboto,sans-serif; }
     body { background: linear-gradient(145deg,#f5f7fc 0%,#e9ecf3 100%); min-height:100vh; padding:1.5rem; display:flex; align-items:center; justify-content:center; }
-    .card { background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-radius:2rem; width:100%; max-width:1040px; padding:2.2rem 2rem 2.5rem; box-shadow:0 25px 40px -12px rgba(0,20,30,0.35); }
+    .card { background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-radius:2rem; width:100%; max-width:1100px; padding:2.2rem 2rem 2.5rem; box-shadow:0 25px 40px -12px rgba(0,20,30,0.35); }
     .heading { display:flex; align-items:center; gap:.6rem; margin-bottom:1.6rem; flex-wrap:wrap; }
     .heading i { font-size:1.8rem; color:#1e3c72; }
     .heading h1 { font-size:1.9rem; font-weight:700; color:#0b1f3b; }
@@ -53,6 +53,10 @@
     .filename { font-weight:600; color:#0b1f3b; word-break:break-all; }
     .muted { color:#7a8ba5; font-size:.8rem; }
     .empty { padding:2.5rem 1rem; text-align:center; color:#7a8ba5; font-size:.95rem; }
+
+    /* Styles for the image thumbnail */
+    .thumbnail { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid #cdd9e8; cursor: pointer; transition: transform 0.2s; background: #f0f4fa; display: flex; align-items: center; justify-content: center; color: #7a8ba5; }
+    .thumbnail:hover { transform: scale(1.1); border-color: #2a5298; }
 
     .pill { display:inline-block; font-size:.72rem; font-weight:700; padding:.28rem .7rem; border-radius:30px; letter-spacing:.3px; }
     .pill.pending { background:#fff4e0; color:#8a5500; }
@@ -108,6 +112,7 @@
           <thead>
             <tr>
               <th style="width:40px;">#</th>
+              <th style="width:60px;">Preview</th> <!-- NEW PREVIEW COLUMN -->
               <th>Filename</th>
               <th style="width:70px;">Size</th>
               <th style="width:150px;">Uploaded</th>
@@ -116,7 +121,7 @@
             </tr>
           </thead>
           <tbody id="filesBody">
-            <tr><td colspan="6" class="empty">Loading files…</td></tr>
+            <tr><td colspan="7" class="empty">Loading files…</td></tr>
           </tbody>
         </table>
       </div>
@@ -276,14 +281,14 @@
 
     // ---------- FILES ----------
     async function loadFiles() {
-      filesBody.innerHTML = `<tr><td colspan="6" class="empty">Loading…</td></tr>`;
+      filesBody.innerHTML = `<tr><td colspan="7" class="empty">Loading…</td></tr>`;
       try {
         const res = await fetch('/api/admin?action=files');
         if (res.status === 401) { showLogin(); return; }
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         if (!data.files.length) {
-          filesBody.innerHTML = `<tr><td colspan="6" class="empty">📭 No files uploaded yet.</td></tr>`;
+          filesBody.innerHTML = `<tr><td colspan="7" class="empty">📭 No files uploaded yet.</td></tr>`;
           dashStatus.className = 'status';
           dashStatus.textContent = '📁 0 files in MongoDB.';
           return;
@@ -291,15 +296,21 @@
 
         filesBody.innerHTML = data.files.map((f, i) => {
           const isDone = f.status === 'done';
-          // Check if image and add appropriate icon
-          const icon = f.isImage 
-            ? '<i class="fas fa-image" style="color:#2a5298;margin-right:6px;"></i>' 
-            : '<i class="fas fa-file-alt" style="color:#7a8ba5;margin-right:6px;"></i>';
+          
+          // Build the preview (image thumbnail or generic icon)
+          let preview = '';
+          if (f.isImage) {
+            // Uses the get-image.js route we created
+            preview = `<img src="/api/get-image?id=${f.id}" class="thumbnail" onclick="window.open('/api/get-image?id=${f.id}', '_blank')" alt="preview" />`;
+          } else {
+            preview = `<div class="thumbnail"><i class="fas fa-file-alt" style="font-size:1.5rem;"></i></div>`;
+          }
 
           return `
             <tr>
               <td class="muted">${i + 1}</td>
-              <td class="filename">${icon} ${esc(f.filename)}</td>
+              <td>${preview}</td> <!-- NEW PREVIEW COLUMN -->
+              <td class="filename">${esc(f.filename)}</td>
               <td class="muted">${fmtSize(f.size)}</td>
               <td class="muted">${fmtDate(f.uploadDate)}</td>
               <td><span class="pill ${isDone ? 'done' : 'pending'}">${isDone ? '✔ DONE' : '● PENDING'}</span></td>
@@ -325,7 +336,7 @@
         dashStatus.className = 'status success';
         dashStatus.textContent = `✅ ${data.count} file${data.count === 1 ? '' : 's'} loaded.`;
       } catch (err) {
-        filesBody.innerHTML = `<tr><td colspan="6" class="empty">Failed to load files.</td></tr>`;
+        filesBody.innerHTML = `<tr><td colspan="7" class="empty">Failed to load files.</td></tr>`;
         dashStatus.className = 'status error';
         dashStatus.textContent = `❌ ${err.message}`;
       }
