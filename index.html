@@ -38,8 +38,9 @@
     <div class="dropzone" id="dropzone">
       <i class="fas fa-file-upload"></i>
       <p>Click or drag file to upload</p>
-      <small>Only one file allowed</small>
+      <small>Images go to Images DB, Documents to Files DB</small>
     </div>
+    <!-- Removed accept="image/*" so users can upload BOTH files and images -->
     <input type="file" id="fileInput" class="input-hidden" />
 
     <div class="file-info" id="fileInfo">No file selected</div>
@@ -92,15 +93,20 @@
       statusDiv.className = 'status';
       statusDiv.textContent = `⏳ Uploading "${selectedFile.name}"...`;
 
+      // Determine if this is an image or a document
+      const isImage = selectedFile.type.startsWith('image/');
+      const endpoint = isImage ? '/api/upload-image' : '/api/upload';
+
       const formData = new FormData();
       formData.append('file', selectedFile);
 
       try {
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const res = await fetch(endpoint, { method: 'POST', body: formData });
         if (!res.ok) throw new Error(`Server ${res.status}: ${await res.text()}`);
         const data = await res.json();
+        
         statusDiv.className = 'status success';
-        statusDiv.textContent = `✅ Stored in MongoDB! ID: ${data.fileId}`;
+        statusDiv.textContent = `✅ ${isImage ? 'Image' : 'File'} stored in MongoDB! ID: ${data.fileId}`;
       } catch (err) {
         statusDiv.className = 'status error';
         statusDiv.textContent = `❌ Upload failed: ${err.message}`;
