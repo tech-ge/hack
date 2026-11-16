@@ -230,4 +230,193 @@
       const email = emailInput.value.trim();
       const password = passwordInput.value;
       if (!email || !password) {
-        loginStatus.className = 'status error
+        loginStatus.className = 'status error';
+        loginStatus.textContent = '⚠️ Email and password required.';
+        return;
+      }
+      loginBtn.disabled = true;
+      loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+      loginStatus.className = 'status';
+      loginStatus.textContent = '⏳ Checking credentials...';
+      try {
+        const res = await fetch('/api/admin?action=login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (res.status === 423) {
+          startLockoutCountdown(data.lockedUntil || (Date.now() + 30 * 60000));
+          return;
+        }
+        if (!res.ok) {
+          const left = data.attemptsLeft;
+          loginStatus.className = 'status error';
+          loginStatus.textContent = `❌ ${data.error}` + (left != null ? ` (${left} left)` : '');
+          loginBtn.disabled = false;
+          loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
+          return;
+        }
+        loginStatus.className = 'status success';
+        loginStatus.textContent = '✅ Logged in!';
+        emailInput.value = '';
+        passwordInput.value = '';
+        showDash(data.email, data.expiresIn || 30 * 60);
+      } catch (err) {
+        loginStatus.className = 'status error';
+        loginStatus.textContent = `❌ ${err.message}`;
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
+      }
+    });
+
+    passwordInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') loginBtn.click();
+    });
+
+    // ---------- FILES ----------
+    async function loadFiles() {
+      filesBody.innerHTML = `<tr><td colspan="6" class="empty">Loading…</td></tr>`;
+      try {
+        const res = await fetch('/api/admin?action=files');
+        if (res.status === 401) { showLogin(); return; }
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (!data.files.length) {
+          filesBody.innerHTML = `<tr><td colspan="6" class="empty">📭 No files uploaded yet.</td></tr>`;
+          dashStatus.className = 'status';
+          dashStatus.textContent = '📁 0 files in MongoDB.';
+          return;
+        }
+
+        filesBody.innerHTML = data.files.map((f, i) => {
+          const isDone = f.status === 'done';
+          // Check if image and add appropriate icon
+          const icon = f.isImage 
+            ? '<i class="fas fa-image" style="color:#2a5298;margin-right:6px;"></i>' 
+            : '<i class="fas fa-file-alt" style="color:#7a8ba5;margin-right:6px;"></i>';
+
+          return `
+            <tr>
+              <td class="muted">${i + 1}</td>
+              <td class="filename">${icon} ${esc(f.filename)}</td>
+              <td class="muted">${fmtSize(f.size)}</td>
+              <td class="muted">${fmtDate(f.uploadDate)}</td>
+              <td><span class="pill ${isDone ? 'done' : 'pending'}">${isDone ? '✔ DONE' : '● PENDING'}</span></td>
+              <td>
+                <div class="actions">
+                  <button class="btn tiny ghost" data-action="download" data-id="${f.id}" data-bucket="${f.bucket}">
+                    <i class="fas fa-download"></i> Download
+                  </button>
+                  <button class="btn tiny ${isDone ? 'undo' : 'success'}"
+                          data-action="markdone" data-id="${f.id}" data-bucket="${f.bucket}" data-done="${isDone ? '0' : '1'}">
+                    <i class="fas ${isDone ? 'fa-rotate-left' : 'fa-check'}"></i>
+                    ${isDone ? 'Undo' : 'Mark Done'}
+                  </button>
+                  <button class="btn tiny danger" data-action="delete" data-id="${f.id}" data-bucket="${f.bucket}" data-name="${esc(f.filename)}">
+                    <i class="fas fa-trash"></i> Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        dashStatus.className = 'status success';
+        dashStatus.textContent = `✅ ${data.count} file${data.count === 1 ? '' : 's'} loaded.`;
+      } catch (err) {
+        filesBody.innerHTML = `<tr><td colspan="6" class="empty">Failed to load files.</td></tr>`;
+        dashStatus.className = 'status error';
+        dashStatus.textContent = `❌ ${err.message}`;
+      }
+    }
+
+    // Delegate button clicks
+    filesBody.addEventListener('click', async e => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      const bucket = btn.dataset.bucket;
+
+      if (action === 'download') {
+        const a = document.createElement('a');
+        a.href = `/api/admin?action=download&id=${id}&bucket=${bucket}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        dashStatus.className = 'status warn';
+        dashStatus.textContent = '⬇️ Download started — marking as done…';
+        setTimeout(loadFiles, 1200);
+        return;
+      }
+
+      if (action === 'markdone') {
+        const done = btn.dataset.done === '1';
+        btn.disabled = true;
+        try {
+          const res = await fetch('/api/admin?action=markdone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, done, bucket }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          dashStatus.className = 'status success';
+          dashStatus.textContent = done ? '✔ Marked as done.' : '↺ Marked as pending.';
+          loadFiles();
+        } catch (err) {
+          dashStatus.className = 'status error';
+          dashStatus.textContent = `❌ ${err.message}`;
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (action === 'delete') {
+        const name = btn.dataset.name || 'this file';
+        if (!confirm(`Delete "${name}" permanently?\n\nThis cannot be undone.`)) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/admin?action=delete&id=${id}&bucket=${bucket}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error(await res.text());
+          dashStatus.className = 'status success';
+          dashStatus.textContent = `🗑️ Deleted "${name}".`;
+          loadFiles();
+        } catch (err) {
+          dashStatus.className = 'status error';
+          dashStatus.textContent = `❌ Delete failed: ${err.message}`;
+          btn.disabled = false;
+        }
+        return;
+      }
+    });
+
+    refreshBtn.addEventListener('click', loadFiles);
+
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/admin?action=logout', { method: 'POST' });
+      stopSessionTimer();
+      showLogin();
+      loginStatus.className = 'status';
+      loginStatus.textContent = '👋 Logged out.';
+      setBadge('LOCKED');
+    });
+
+    // ---------- auto-login check ----------
+    (async function checkSession() {
+      try {
+        const res = await fetch('/api/admin?action=session');
+        if (res.ok) {
+          const data = await res.json();
+          const secs = Math.max(1, Math.floor((data.expiresAt - Date.now()) / 1000));
+          showDash(data.email, secs);
+        } else {
+          showLogin();
+        }
+      } catch {
+        showLogin();
+      }
+    })();
+  </script>
+</body>
+</html>
