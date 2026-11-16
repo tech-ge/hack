@@ -42,6 +42,7 @@ export default async function handler(req, res) {
 
     let fileBuffer = null;
     let filename = 'upload.bin';
+    let fileMimeType = 'application/octet-stream';
 
     for (const part of parts) {
       if (!part.length) continue;
@@ -51,9 +52,12 @@ export default async function handler(req, res) {
       const body = part.slice(headerEnd + 4, part.length - 2);
       const nameMatch = headerStr.match(/name="([^"]+)"/i);
       const fileMatch = headerStr.match(/filename="([^"]*)"/i);
+      
       if (nameMatch && nameMatch[1] === 'file' && fileMatch) {
         fileBuffer = body;
         filename = fileMatch[1] || 'upload.bin';
+        const typeMatch = headerStr.match(/Content-Type:\s*([^\r\n]+)/i);
+        if (typeMatch) fileMimeType = typeMatch[1].trim();
         break;
       }
     }
@@ -62,7 +66,19 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'No file found in request' });
     }
 
-    const uploadStream = bucket.openUploadStream(filename);
+    // Block images from this route
+    if (fileMimeType.startsWith('image/')) {
+      return res.status(400).json({ error: 'This route is for files only. Use /api/upload-image for images.' });
+    }
+    if (fileBuffer.length > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'File too large. Max size is 10MB.' });
+    }
+
+    const uploadStream = bucket.openUploadStream(filename, {
+      contentType: fileMimeType,
+      metadata: { originalType: fileMimeType }
+    });
+
     await new Promise((resolve, reject) => {
       Readable.from(fileBuffer)
         .pipe(uploadStream)
@@ -77,7 +93,7 @@ export default async function handler(req, res) {
       size: fileBuffer.length,
     });
   } catch (err) {
-    console.error('Upload error:', err);
+    console.error('File upload error:', err);
     return res.status(500).json({ error: err.message });
   }
 }
